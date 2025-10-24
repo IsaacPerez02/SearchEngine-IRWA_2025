@@ -32,14 +32,3 @@ pip install spacy
 - `math`
 
 These libraries are part of the standard Python installation, so you do not need to install them.
-
----
-
-## 4. Summary
-
-After installing these libraries, the notebook should run correctly, including:
-
-- Exploratory Data Analysis (EDA)  
-- Processing product descriptions  
-- Word counting and word cloud generation  
-- Numerical and categorical distribution plots
