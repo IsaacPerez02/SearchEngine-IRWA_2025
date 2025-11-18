@@ -1,0 +1,21 @@
+# Ignore all data files
+data/
+*.csv
+*.tsv
+*.json
+*.xml
+*.xlsx
+*.xls
+*.parquet
+*.h5
+*.zip
+*.tar
+*.gz
+
+# Ignore temporary files
+*.log
+*.tmp
+*.bak
+
+# Ignore Jupyter notebook checkpoints
+.ipynb_checkpoints/
