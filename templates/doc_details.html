@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ doc.title }}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+        }
+
+        header {
+            background-color: #e25c5c;
+            color: white;
+            padding: 15px 30px;
+            text-align: center;
+        }
+
+        nav {
+            margin: 15px 30px;
+        }
+
+        nav a {
+            margin-right: 15px;
+            text-decoration: none;
+            color: #e25c5c;
+            font-weight: bold;
+        }
+
+        nav a:hover {
+            text-decoration: underline;
+        }
+
+        .product-card {
+            background-color: white;
+            max-width: 900px;
+            margin: 30px auto;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.1);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        /* Columna de imágenes */
+        .product-images {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .main-image {
+            width: 100%;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            object-fit: contain;
+            box-shadow: 0 6px 12px rgba(0,0,0,0.1);
+        }
+
+        .image-gallery {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .image-gallery img {
+            width: calc(50% - 5px);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .image-gallery img:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        /* Columna de detalles */
+        .product-details {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .product-details h1 {
+            margin-top: 0;
+            font-size: 2rem;
+            color: #333;
+        }
+
+        .product-details p {
+            margin: 10px 0;
+            font-size: 1.1rem;
+            color: #555;
+        }
+
+        .price {
+            font-size: 1.5rem;
+            color: #28a745;
+            font-weight: bold;
+        }
+
+        .discount {
+            font-size: 1rem;
+            color: #e25c5c;
+            font-weight: bold;
+        }
+
+        .rating {
+            display: inline-block;
+            background-color: #ffc107;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+
+        .product-link a {
+            display: inline-block;
+            margin-top: 15px;
+            text-decoration: none;
+            background-color: #e25c5c;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            transition: 0.3s;
+        }
+
+        .product-link a:hover {
+            background-color: #c84141;
+        }
+
+        @media (max-width: 768px) {
+            .product-card {
+                flex-direction: column;
+            }
+
+            .image-gallery img {
+                width: 48%;
+            }
+        }
+
+        @media (max-width: 500px) {
+            .image-gallery img {
+                width: 100%;
+            }
+        }
+
+    </style>
+</head>
+<body>
+<header>
+    <h2>Details of Product</h2>
+</header>
+
+<nav>
+    <a href="/">Home</a>
+    <a href="/stats">Stats</a>
+    <a href="/dashboard">Dashboard</a>
+</nav>
+
+<div class="product-card">
+    <div class="product-images">
+        {% if doc.images %}
+        <img class="main-image" id="mainImage" src="{{ doc.images[0] }}" alt="Imagen principal">
+        <div class="image-gallery">
+            {% for img in doc.images %}
+            <img src="{{ img }}" alt="Imagen del producto" onclick="document.getElementById('mainImage').src='{{ img }}'">
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="product-details">
+        <h1>{{ doc.title }}</h1>
+        <p>{{ doc.description }}</p>
+        <p class="price">Actual price: ${{ doc.actual_price }}</p>
+
+        {% if doc.discount %}
+        <p class="discount">Discount: {{ doc.discount }}%</p>
+        <p class="price">Price: ${{ doc.selling_price }}</p>
+        {% endif %}
+        
+        {% if doc.average_rating %}
+        <p class="rating">⭐ {{ doc.average_rating }}</p>
+        {% endif %}
+        <div class="product-link">
+            <a href="{{ doc.url }}" target="_blank">Product URL</a>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

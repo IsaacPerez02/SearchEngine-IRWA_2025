@@ -1,17 +1,22 @@
 import os
+import random
+import json
 from json import JSONEncoder
 
 import httpagentparser  # for getting the user agent as json
 from flask import Flask, render_template, session
 from flask import request
 
-from app.analytics.analytics import AnalyticsData, ClickedDoc
-from app.search.load_corpus import load_corpus
-from app.search.objects import Document, StatsDocument
-from app.search.search_engine import SearchEngine
-from app.generation.rag import RAGGenerator
+from myapp.analytics.analytics_data import AnalyticsData, ClickedDoc
+from myapp.search.load_corpus import load_corpus
+from myapp.search.objects import Document, StatsDocument
+from myapp.search.search_engine import SearchEngine
+from myapp.generation.rag import RAGGenerator
 from dotenv import load_dotenv
+import nltk
+
 load_dotenv()  # take environment variables from .env
+nltk.download('stopwords')
 
 
 # *** for using method to_json in objects ***
@@ -44,6 +49,8 @@ corpus = load_corpus(file_path)
 # Log first element of corpus to verify it loaded correctly:
 print("\nCorpus is loaded... \n First element:\n", list(corpus.values())[0])
 
+if search_engine.index is None:
+    search_engine.build_index(corpus)
 
 # Home URL "/"
 @app.route('/')
@@ -67,74 +74,76 @@ def index():
 
 @app.route('/search', methods=['POST'])
 def search_form_post():
-    
     search_query = request.form['search-query']
-
     session['last_search_query'] = search_query
 
+    # Generar un search_id
     search_id = analytics_data.save_query_terms(search_query)
+    session['last_search_id'] = search_id  # para doc_details
 
-    results = search_engine.search(search_query, search_id, corpus)
+    # Ejecutar búsqueda
+    results = search_engine.search(search_query, corpus, search_id)
 
-    # generate RAG response based on user query and retrieved results
-    rag_response = rag_generator.generate_response(search_query, results)
-    print("RAG response:", rag_response)
+    # Guardar ranking de resultados en memoria
+    ranked_doc_ids = [doc.pid for doc in results]
+    analytics_data.query_results[search_id] = ranked_doc_ids
 
-    found_count = len(results)
-    session['last_found_count'] = found_count
+    # Guardar búsqueda en JSONL
+    os.makedirs("data", exist_ok=True)
+    search_data = {
+        "search_id": search_id,
+        "query": search_query,
+        "n_terms": len(search_query.split()),
+        "found_count": len(results),
+        "result_doc_ids": ranked_doc_ids
+    }
+    with open(os.path.join("data", "searches.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps(search_data, ensure_ascii=False) + "\n")
 
-    print(session)
-
-    return render_template('results.html', results_list=results, page_title="Results", found_counter=found_count, rag_response=rag_response)
-
+    return render_template('results.html',
+                           results_list=results,
+                           page_title="Results",
+                           found_counter=len(results),
+                           rag_response=rag_generator.generate_response(search_query, results))
 
 @app.route('/doc_details', methods=['GET'])
 def doc_details():
-    """
-    Show document details page
-    ### Replace with your custom logic ###
-    """
-
-    # getting request parameters:
-    # user = request.args.get('user')
-    print("doc details session: ")
-    print(session)
-
-    res = session["some_var"]
-    print("recovered var from session:", res)
-
-    # get the query string parameters from request
     clicked_doc_id = request.args["pid"]
-    print("click in id={}".format(clicked_doc_id))
+    last_search_id = session.get("last_search_id")
 
-    # store data in statistics table 1
-    if clicked_doc_id in analytics_data.fact_clicks.keys():
+    # Actualizar clicks en memoria
+    if clicked_doc_id in analytics_data.fact_clicks:
         analytics_data.fact_clicks[clicked_doc_id] += 1
     else:
         analytics_data.fact_clicks[clicked_doc_id] = 1
+    click_count = analytics_data.fact_clicks[clicked_doc_id]
 
-    print("fact_clicks count for id={} is {}".format(clicked_doc_id, analytics_data.fact_clicks[clicked_doc_id]))
-    print(analytics_data.fact_clicks)
-    return render_template('doc_details.html')
+    # Obtener ranking
+    rank = None
+    if last_search_id and analytics_data.query_results.get(last_search_id):
+        try:
+            rank = analytics_data.query_results[last_search_id].index(clicked_doc_id) + 1
+        except ValueError:
+            rank = None
 
+    os.makedirs("data", exist_ok=True)
+    dwell_time = analytics_data.end_dwell_timer(session.sid if hasattr(session, 'sid') else str(random.randint(0,100000)), clicked_doc_id)
+    click_data = {
+        "doc_id": clicked_doc_id,
+        "search_id": last_search_id,
+        "rank": rank,
+        "click_count": click_count,
+        "dwell_time": dwell_time,
+    }
+    with open(os.path.join("data", "doc_clicks.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps(click_data, ensure_ascii=False) + "\n")
 
-@app.route('/stats', methods=['GET'])
-def stats():
-    """
-    Show simple statistics example. ### Replace with yourdashboard ###
-    :return:
-    """
+    # Iniciar timer de dwell para próxima visita
+    analytics_data.start_dwell_timer(session.sid if hasattr(session, 'sid') else str(random.randint(0,100000)), clicked_doc_id)
 
-    docs = []
-    for doc_id in analytics_data.fact_clicks:
-        row: Document = corpus[doc_id]
-        count = analytics_data.fact_clicks[doc_id]
-        doc = StatsDocument(pid=row.pid, title=row.title, description=row.description, url=row.url, count=count)
-        docs.append(doc)
-    
-    # simulate sort by ranking
-    docs.sort(key=lambda doc: doc.count, reverse=True)
-    return render_template('stats.html', clicks_data=docs)
+    # Renderizar documento
+    item = corpus.get(clicked_doc_id)
+    return render_template('doc_details.html', doc=item)
 
 
 @app.route('/dashboard', methods=['GET'])
