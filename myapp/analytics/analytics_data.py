@@ -4,7 +4,6 @@ import altair as alt
 import pandas as pd
 import os
 
-
 class AnalyticsData:
     """
     An in memory persistence object.
@@ -64,17 +63,15 @@ class AnalyticsData:
         return None
     
     def plot_number_of_views(self):
-        # Prepare data
         data = [{'Document ID': doc_id, 'Number of Views': count} for doc_id, count in self.fact_clicks.items()]
         df = pd.DataFrame(data)
-        # Create Altair chart
+
         chart = alt.Chart(df).mark_bar().encode(
-            x='Document ID',
-            y='Number of Views'
+            y=alt.Y('Document ID', sort='-x'),
+            x='Number of Views'
         ).properties(
-            title='Number of Views per Document'
+            title='Number of Views per Document (Horizontal)'
         )
-        # Render the chart to HTML
         return chart.to_html()
 
 

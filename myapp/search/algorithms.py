@@ -9,7 +9,7 @@ from myapp.search.objects import Document
 from myapp.core.utils import build_terms
 
 def create_index_tfidf_corpus(corpus: Dict[str, Document]):
-
+    print("Building tfidf index...")
     index = defaultdict(list)       
     tf = defaultdict(list)         
     df = defaultdict(int)           
@@ -116,3 +116,71 @@ def rank_products(terms, docs, index, idf, tf, title_index):
 
     #print ('\n'.join(result_docs), '\n')
     return result_docs
+
+def create_index_bm25_corpus(corpus: Dict[str, Document]):
+    """
+    Build inverted index and BM25 statistics for a corpus of Document objects.
+    corpus: dict of pid -> Document
+    Returns: index, tf, df, idf, title_index, doc_len, avg_doc_len
+    """
+    print("Building bm25 index...")
+    index = defaultdict(list)       # term -> postings list [pid, positions]
+    tf = defaultdict(list)          # term -> raw frequency counts across documents
+    df = defaultdict(int)           # term -> number of documents containing term
+    idf = {}                        # BM25 idf values
+    title_index = {}                # pid -> title
+    doc_len = {}                    # pid -> document length (# of terms)
+    N = len(corpus)
+
+    for pid, doc in corpus.items():
+        title_tokens = build_terms(doc.title or "")
+        description_tokens = build_terms(doc.description or "")
+        words = title_tokens + description_tokens
+
+        title_index[pid] = doc.title or ""
+        doc_len[pid] = len(words)
+
+        term_positions = {}
+        for pos, term in enumerate(words):
+            term_positions.setdefault(term, []).append(pos)
+
+        for term, positions in term_positions.items():
+            index[term].append([pid, array('I', positions)])
+            df[term] += 1
+            tf[term].append(len(positions))
+
+    # BM25-style IDF
+    for term, freq in df.items():
+        idf[term] = math.log(N / freq)
+
+    avg_doc_len = sum(doc_len.values()) / N if N > 0 else 0
+    return index, tf, df, idf, title_index, doc_len, avg_doc_len
+
+
+def rank_products_bm25(terms, docs, index, idf, tf, doc_len, avg_doc_len, k1=1.5, b=0.75):
+    """
+    Rank documents using BM25 scoring.
+    terms: list of query terms
+    docs: list of candidate doc IDs
+    Returns: list of ranked doc IDs
+    """
+    scores = defaultdict(float)
+
+    for term in terms:
+        if term not in index:
+            continue
+        postings = index[term]
+        tf_list = tf[term]
+        idf_value = idf[term]
+
+        for i, (doc_id, positions) in enumerate(postings):
+            if doc_id not in docs:
+                continue
+            f = tf_list[i]          # raw frequency of term in this doc
+            dl = doc_len[doc_id]    # length of this document
+            denom = f + k1 * (1 - b + b * dl / avg_doc_len)
+            score = idf_value * ((f * (k1 + 1)) / denom)
+            scores[doc_id] += score
+
+    doc_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    return [doc for doc, score in doc_scores]

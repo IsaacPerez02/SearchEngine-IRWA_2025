@@ -10,14 +10,14 @@ class RAGGenerator:
         You are an expert product advisor helping users choose the best option from retrieved e-commerce products.
 
         ## Instructions:
-        1. Identify the single best product that matches the user's request.
-        2. Present the recommendation clearly in this format:
+        1. Only recommend products that strictly match the user query criteria.
+        2. 2. Include metadata: price, rating, stock, category.
+        3. Present the recommendation clearly in this format:
         - Best Product: [Product PID] [Product Name]
         - Why: [Explain in plain language why this product is the best fit, referring to specific attributes like price, features, quality, or fit to user’s needs.]
-        3. If there is another product that could also work, mention it briefly as an alternative.
-        4. If no product is a good fit, return ONLY this exact phrase:
+        4. If there is another product that could also work, mention it briefly as an alternative.
+        5. If no product is a good fit, return EXACTLY:
         "There are no good products that fit the request based on the retrieved results."
-
         ## Retrieved Products:
         {retrieved_results}
 
@@ -38,6 +38,10 @@ class RAGGenerator:
         """
         DEFAULT_ANSWER = "RAG is not available. Check your credentials (.env file) or account limits."
         try:
+            filtered_results = [res for res in retrieved_results if not res.out_of_stock and (res.average_rating >= 3.0)]
+            if not filtered_results:
+                return "There are no good products that fit the request based on the retrieved results."
+            
             client = Groq(
                 api_key=os.environ.get("GROQ_API_KEY"),
             )
@@ -45,7 +49,7 @@ class RAGGenerator:
 
             # Format the retrieved results for the prompt
             formatted_results = "\n".join(
-                [f"- PID: {res.pid}, Title: {res.title}" for res in retrieved_results[:top_N]]
+                [f"- PID: {res.pid}, Title: {res.title}, Price: {res.selling_price}, Rating: {res.average_rating}, Stock: {'Yes' if not res.out_of_stock else 'No'}" for res in filtered_results[:top_N]]
             )
 
             prompt = self.PROMPT_TEMPLATE.format(

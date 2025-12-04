@@ -1,76 +1,72 @@
-import random
-import numpy as np
-import os
-import json
-
-from myapp.search.objects import Document
 from myapp.core.utils import build_terms
-from myapp.search.algorithms import create_index_tfidf_corpus
-from myapp.search.algorithms import rank_products
-
-def dummy_search(corpus: dict, search_id, num_results=20):
-    """
-    Just a demo method, that returns random <num_results> documents from the corpus
-    :param corpus: the documents corpus
-    :param search_id: the search id
-    :param num_results: number of documents to return
-    :return: a list of random documents from the corpus
-    """
-    res = []
-    doc_ids = list(corpus.keys())
-    docs_to_return = np.random.choice(doc_ids, size=num_results, replace=False)
-    for doc_id in docs_to_return:
-        doc = corpus[doc_id]
-        res.append(Document(pid=doc.pid, title=doc.title, description=doc.description,
-                            url="doc_details?pid={}&search_id={}&param2=2".format(doc.pid, search_id), ranking=random.random()))
-    return res
+from myapp.search.objects import Document
+from myapp.search.algorithms import (
+    rank_products,
+    rank_products_bm25
+)
 
 class SearchEngine:
+    def search(self, query: str, corpus: dict, index_data: dict, search_id, mode):
+        """
+        Stateless search function.
+        - query: raw query string
+        - corpus: dict of pid -> Document
+        - index_data: dict containing all index variables + 'mode' flag
+        - search_id: optional search identifier
+        - mode: 'tfidf' or 'bm25'
+        """
 
-    def __init__(self):
-        self.index = None
-        self.tf = None
-        self.df = None
-        self.idf = None
-        self.title_index = None
+        query_terms = build_terms(query)
 
-    def build_index(self, corpus):
-        print("Building index...")
-        (self.index, self.tf, self.df, self.idf, self.title_index) = create_index_tfidf_corpus(corpus)
-
-    def search_in_corpus(self, query, corpus, search_id=None):
-        query = build_terms(query)
+        # collect candidate docs (intersection of query terms)
         docs = None
-
-        for term in query:
-            if term in self.index:
-                term_docs = {posting[0] for posting in self.index[term]}
-                docs = term_docs if docs is None else docs & term_docs
-            else:
+        for term in query_terms:
+            if term not in index_data["index"]:
                 docs = set()
                 break
+            term_docs = {posting[0] for posting in index_data["index"][term]}
+            docs = term_docs if docs is None else docs & term_docs
 
-        docs = list(docs)
-        ranked_products = rank_products(query, docs, self.index, self.idf, self.tf, self.title_index)
-        top = 10
+        docs = list(docs or [])
 
+        # choose ranking strategy
+        if mode == "tfidf":
+            ranked_pids = rank_products(
+                query_terms,
+                docs,
+                index_data["index"],
+                index_data["idf"],
+                index_data["tf"],
+                index_data["title_index"]
+            )
+        elif mode == "bm25":
+            ranked_pids = rank_products_bm25(
+                query_terms,
+                docs,
+                index_data["index"],
+                index_data["idf"],
+                index_data["tf"],
+                index_data["doc_len"],
+                index_data["avg_doc_len"],
+                index_data.get("k1", 1.5),
+                index_data.get("b", 0.75)
+            )
+        else:
+            raise ValueError(f"Unknown search mode: {mode}")
+
+        # wrap results into Document objects
         results = []
-        rank = 0
-        for pid in ranked_products[:top]:
+        for rank, pid in enumerate(ranked_pids[:10]):
             doc = corpus.get(pid)
             if doc:
-                result = Document(
+                results.append(Document(
                     pid=doc.pid,
                     title=doc.title,
                     description=doc.description,
-                    url=f"doc_details?pid={doc.pid}&search_id={search_id or 'N/A'}&param2=2",
+                    url=f"doc_details?pid={doc.pid}&search_id={search_id or 'N/A'}",
+                    average_rating=doc.average_rating,
+                    selling_price=doc.selling_price,
+                    out_of_stock=doc.out_of_stock,
                     ranking=rank
-                )
-                rank += 1
-                results.append(result)
+                ))
         return results
-
-    def search(self, search_query, corpus, search_id=None):
-        print("Search query:", search_query)
-        print()
-        return self.search_in_corpus(search_query, corpus, search_id)

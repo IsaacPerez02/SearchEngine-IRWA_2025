@@ -11,6 +11,8 @@ from myapp.analytics.analytics_data import AnalyticsData, ClickedDoc
 from myapp.search.load_corpus import load_corpus
 from myapp.search.objects import Document, StatsDocument
 from myapp.search.search_engine import SearchEngine
+from myapp.search.algorithms import create_index_bm25_corpus
+from myapp.search.algorithms import create_index_tfidf_corpus
 from myapp.generation.rag import RAGGenerator
 from dotenv import load_dotenv
 import nltk
@@ -34,10 +36,10 @@ app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY")
 # open browser dev tool to see the cookies
 app.session_cookie_name = os.getenv("SESSION_COOKIE_NAME")
-# instantiate our search engine
-search_engine = SearchEngine()
 # instantiate our in memory persistence
 analytics_data = AnalyticsData()
+
+search_engine = SearchEngine()
 # instantiate RAG generator
 rag_generator = RAGGenerator()
 
@@ -49,8 +51,32 @@ corpus = load_corpus(file_path)
 # Log first element of corpus to verify it loaded correctly:
 print("\nCorpus is loaded... \n First element:\n", list(corpus.values())[0])
 
-if search_engine.index is None:
-    search_engine.build_index(corpus)
+# Build TF-IDF index once
+index, tf, df, idf, title_index = create_index_tfidf_corpus(corpus)
+tfidf_index_data = {
+    "mode": "tfidf",
+    "index": index,
+    "tf": tf,
+    "df": df,
+    "idf": idf,
+    "title_index": title_index
+}
+
+# Build BM25 index once
+index, tf, df, idf, title_index, doc_len, avg_doc_len = create_index_bm25_corpus(corpus)
+bm25_index_data = {
+    "mode": "bm25",
+    "index": index,
+    "tf": tf,
+    "df": df,
+    "idf": idf,
+    "title_index": title_index,
+    "doc_len": doc_len,
+    "avg_doc_len": avg_doc_len,
+    "k1": 1.5,
+    "b": 0.75
+}
+
 
 # Home URL "/"
 @app.route('/')
@@ -71,28 +97,31 @@ def index():
     print(session)
     return render_template('index.html', page_title="Welcome")
 
-
 @app.route('/search', methods=['POST'])
 def search_form_post():
     search_query = request.form['search-query']
+    mode = request.form.get('mode', 'tfidf')  # user selects algorithm
     session['last_search_query'] = search_query
 
-    # Generar un search_id
+    # Generate search_id
     search_id = analytics_data.save_query_terms(search_query)
-    session['last_search_id'] = search_id  # para doc_details
+    session['last_search_id'] = search_id
+    
+    if mode == "tfidf":
+        results = search_engine.search(search_query, corpus, tfidf_index_data, search_id, mode=mode)
+    else:
+        results = search_engine.search(search_query, corpus, bm25_index_data, search_id, mode=mode)
 
-    # Ejecutar búsqueda
-    results = search_engine.search(search_query, corpus, search_id)
-
-    # Guardar ranking de resultados en memoria
+    # Save ranking in memory
     ranked_doc_ids = [doc.pid for doc in results]
     analytics_data.query_results[search_id] = ranked_doc_ids
 
-    # Guardar búsqueda en JSONL
+    # Save search metadata to JSONL
     os.makedirs("data", exist_ok=True)
     search_data = {
         "search_id": search_id,
         "query": search_query,
+        "mode": mode,
         "n_terms": len(search_query.split()),
         "found_count": len(results),
         "result_doc_ids": ranked_doc_ids
@@ -102,9 +131,10 @@ def search_form_post():
 
     return render_template('results.html',
                            results_list=results,
-                           page_title="Results",
+                           page_title=f"Results ({mode.upper()})",
                            found_counter=len(results),
                            rag_response=rag_generator.generate_response(search_query, results))
+
 
 @app.route('/doc_details', methods=['GET'])
 def doc_details():
@@ -165,6 +195,27 @@ def dashboard():
 @app.route('/plot_number_of_views', methods=['GET'])
 def plot_number_of_views():
     return analytics_data.plot_number_of_views()
+
+@app.route("/dashboard/views")
+def dash_views():
+    return analytics_data.plot_document_views()
+
+@app.route("/dashboard/hourly")
+def dash_hourly():
+    return analytics_data.plot_queries_per_hour()
+
+@app.route("/dashboard/rank")
+def dash_rank():
+    return analytics_data.plot_rank_distribution()
+
+@app.route("/dashboard/dwell")
+def dash_dwell():
+    return analytics_data.plot_dwell_times()
+
+@app.route("/dashboard/querylen")
+def dash_querylen():
+    return analytics_data.plot_query_lengths()
+
 
 
 if __name__ == "__main__":
